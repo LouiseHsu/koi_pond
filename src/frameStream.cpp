@@ -1,18 +1,30 @@
 #include "frameStream.hpp"
 #include <Arduino.h>
 
-void streamFrameIfRequested(LGFX_Sprite &canvas) {
-  // --- Did the PC ask for a frame? ---
-  bool requested = false;
-  while (Serial.available()) {          // read everything waiting, so requests don't pile up
-    if (Serial.read() == 'F') requested = true;
-  }
-  if (!requested) return;
+static bool recording = false;
 
-  // --- Send it ---
-  // setup() sets the send timeout to 0, which drops bytes when the USB buffer
-  // is full. That's fine for text, but a frame with missing bytes is garbage,
-  // so let it wait while we send, then put it back.
+// If the viewer goes quiet for this long while recording (closed, crashed,
+// unplugged), give up!!
+static constexpr uint32_t RECORD_TIMEOUT_MS = 2000;
+
+bool frameStreamIsRecording() {
+  return recording;
+}
+
+// Reads every command waiting from the PC. Returns true if a frame was asked for.
+static bool readCommands() {
+  bool requested = false;
+  while (Serial.available()) {
+    switch (Serial.read()) {
+      case 'F': requested = true;  break;
+      case 'R': recording = true;  break;
+      case 'N': recording = false; break;
+    }
+  }
+  return requested;
+}
+
+static void sendFrame(LGFX_Sprite &canvas) {
   Serial.setTxTimeoutMs(250);
 
   uint16_t width  = canvas.width();
@@ -23,4 +35,22 @@ void streamFrameIfRequested(LGFX_Sprite &canvas) {
   Serial.write((const uint8_t *)canvas.getBuffer(), width * height * 2);
 
   Serial.setTxTimeoutMs(0);
+}
+
+void streamFrameIfRequested(LGFX_Sprite &canvas) {
+  bool requested = readCommands();
+
+  if (recording && !requested) {
+    uint32_t waitStart = millis();
+    while (recording && !requested) {
+      if (millis() - waitStart > RECORD_TIMEOUT_MS) {
+        recording = false;   // viewer gone
+        break;
+      }
+      delay(1);
+      requested = readCommands();
+    }
+  }
+
+  if (requested) sendFrame(canvas);
 }

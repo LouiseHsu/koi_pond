@@ -1,10 +1,6 @@
 #pragma once
 #include <LovyanGFX.hpp>
 
-
-
-
-// Blend two RGB565 colours. t = 0 gives a, t = 1 gives b.
 constexpr uint16_t lerp565(uint16_t a, uint16_t b, float t) {
   int ar = (a >> 11) & 31, ag = (a >> 5) & 63, ab = a & 31;
   int br = (b >> 11) & 31, bg = (b >> 5) & 63, bb = b & 31;

@@ -4,8 +4,6 @@
 #include "vec2.hpp"
 #include "spriteLoader.hpp"
 
-// A koi that wanders between random points in the pond, drawn by bending a
-// texture along a chain of joints (its spine).
 class Koi {
 public:
   // --- Fish Spawn ---
@@ -27,7 +25,7 @@ public:
   static constexpr float HEAD_WIGGLE_AMPLITUDE = 0.7f;   // how far the head swings side to side (radians)
   static constexpr float HEAD_WIGGLE_FREQUENCY = 4.0f;   // how fast the head swings (radians per second)
 
-  // --- Body wave (drawing only) ---
+  // --- Body wave (for drawing only) ---
   static constexpr float BODY_WAVE_SPEED = 5.0f;  // how fast the wave travels down the body (radians per second)
   static constexpr float BODY_WAVE_LAG   = 0.7f;  // how far each segment trails the one in front (radians per segment)
 
@@ -47,7 +45,7 @@ private:
   };
 
 // Screen position of every texel corner. One more than the texture size in
-// each direction, because 16 texels across have 17 edges between/around them.
+// each direction, because 16 texels across have 17 edges between them.
 int16_t cornerScreenX[SpriteLoader::MAX_TEXTURE_HEIGHT + 1][SpriteLoader::MAX_TEXTURE_WIDTH + 1];
 int16_t cornerScreenY[SpriteLoader::MAX_TEXTURE_HEIGHT + 1][SpriteLoader::MAX_TEXTURE_WIDTH + 1];
 

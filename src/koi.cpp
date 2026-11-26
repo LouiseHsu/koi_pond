@@ -4,11 +4,11 @@
 
 
 // The orange painted in the TGA files. Texels this colour get swapped for
-// each fish's own mainColour when drawn.
+// each koi's own mainColour when drawn.
 static const uint16_t PLACEHOLDER_ORANGE = lgfx::color565(251, 107, 29);
 
 
-// Oranges a fish can be. Each fish picks one in begin().
+// Oranges a fish can be. Each fish gets a special one in begin().
 static const uint16_t mainColourChoices[] = {0xfb44, 0xe1e7};
 static const int      NUM_MAIN_COLOURS    = sizeof(mainColourChoices) / sizeof(mainColourChoices[0]);
 
@@ -63,7 +63,7 @@ void Koi::initSpine() {
   Vec2 placement = {(float)random(0, W), (float)random(0, H)};
   for (int i = 0; i < NUM_JOINT; i++) {
     joints[i] = placement;
-    placement.x -= segmentLength * 0.7071f;  // 45° diagonal, total step = segmentLength
+    placement.x -= segmentLength * 0.7071f;
     placement.y -= segmentLength * 0.7071f;
   }
 }
@@ -175,7 +175,7 @@ Koi::RowValues Koi::spriteToFishRow(float y) {
 
   Vec2 perpendicularVector = Vec2{spineDirection.y, -spineDirection.x};
 
-  // --- Body wave: sideways swing, bigger toward the tail ---
+  // --- fish body wave + bigger toward the tail ---
   float A_i    = 0.03f + (spinePosition / 8.0f) * 0.27f;
   float offset = A_i * 10.0f * sinf(phase - spinePosition * BODY_WAVE_LAG);
 
@@ -190,8 +190,7 @@ Koi::RowValues Koi::spriteToFishRow(float y) {
 
 void Koi::drawShadow(LGFX_Sprite &sprite) {
   int offset = floor((MAX_DEPTH - depth) * 1.5);
-  // --- Fill each texel as two triangles ---
-  // Shadow
+
   for (int row = 0; row < texture->height(); row++) {
     for (int column = 0; column < texture->width(); column++) {
       if (!texture->isOpaque(row, column)) continue;  // see-through
@@ -208,8 +207,6 @@ void Koi::drawShadow(LGFX_Sprite &sprite) {
 }
 
 void Koi::drawFish(LGFX_Sprite &sprite) {
-  // --- Fill each texel as two triangles ---
-  // Fish
   for (int row = 0; row < texture->height(); row++) {
     for (int column = 0; column < texture->width(); column++) {
       if (!texture->isOpaque(row, column)) continue;  // see-through

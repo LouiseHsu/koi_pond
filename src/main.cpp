@@ -1,13 +1,12 @@
 #include <Arduino.h>
 #include <LovyanGFX.hpp>
+#include "pondConfig.hpp"
+#include "colours.hpp"
 #include "spriteLoader.hpp"
 #include "koi.hpp"
-#include "koi_patterns.h"   // replaces #include "koi_tga.h"
-#include "colours.hpp"
+#include "koi_patterns.h"
 #include "waterEffects.hpp"
 #include "frameStream.hpp"
-#include "pondConfig.hpp"
-
 
 // =============================================================================
 // Display hardware (ST7789 over SPI)
@@ -19,7 +18,6 @@ class LGFX : public lgfx::LGFX_Device {
 
 public:
   LGFX() {
-    // --- SPI bus ---
     {
       auto cfg = _bus.config();
       cfg.spi_host   = SPI2_HOST;
@@ -33,7 +31,6 @@ public:
       _panel.setBus(&_bus);
     }
 
-    // --- Panel ---
     {
       auto cfg = _panel.config();
       cfg.pin_cs       = 3;  // CS
@@ -61,11 +58,13 @@ LGFX_Sprite screen(&tft);
 SpriteLoader patternTextures[NUM_KOI_PATTERNS];
 WaterEffects water;
 Koi          kois[5];
-Koi *drawOrder[std::size(kois)];
+Koi         *drawOrder[std::size(kois)];
 
+static float nextPoke = random(0.0f, 3.0f);
 
 // --- Timing ---
 uint32_t lastTime = 0;
+float    pondTime = 0;  // seconds of pond time + follows real time, except while recording
 
 // =============================================================================
 // Timing
@@ -80,55 +79,8 @@ float updateDeltaTime() {
 }
 
 // =============================================================================
-// Arduino entry points
-// =============================================================================
-
-void setup() {
-  Serial.begin(115200);
-  Serial.setTxTimeoutMs(0);
-  randomSeed(esp_random());
-
-  // --- Screen ---
-  tft.init();
-  tft.setRotation(0);
-  tft.fillScreen(TFT_BLACK);  // Clear whatever was in display RAM
-
-  // --- Texture ---
-  for (int i = 0; i < NUM_KOI_PATTERNS; i++) {
-    const char *err;
-    if (!patternTextures[i].loadTga(KOI_PATTERNS[i].data, KOI_PATTERNS[i].length, err)) {
-      Serial.printf("%s: %s\n", KOI_PATTERNS[i].name, err);
-    }
-  }
-
-  for (Koi &koi : kois){
-    koi.begin(patternTextures[random(NUM_KOI_PATTERNS)], CANVAS_W, CANVAS_H);
-  }
-
-  for (size_t i = 0; i < std::size(kois); i++) drawOrder[i] = &kois[i];
-    std::sort(std::begin(drawOrder), std::end(drawOrder),
-              [](const Koi *a, const Koi *b) { return a->depth > b->depth; });
-
-
-  // --- Canvas ---
-  underwater.setColorDepth(16);
-  underwater.createSprite(CANVAS_W, CANVAS_H);
-
-  screen.setColorDepth(16);
-  screen.createSprite(CANVAS_W, CANVAS_H);
-
-  // --- Water ---
-  water.begin();
-  water.startRippleAt(20, 20, 250);
-}
-
-
-
-// =============================================================================
 // Frame timing (debug)
 // =============================================================================
-// Adds up how long each part of loop() takes, and once a second prints the
-// average per frame. Averages are steadier than timing a single frame.
 
 struct FrameTimes {
   uint32_t clear   = 0;
@@ -152,9 +104,49 @@ void reportFrameTimes() {
                 frameTimes.clear / n, frameTimes.shadows / n, frameTimes.kois / n, frameTimes.push / n,
                 total, 1e6f / total);
 
-  frameTimes = FrameTimes();  // reset for the next second
+  frameTimes = FrameTimes();  // reset for da next second
 }
-  static uint32_t lastPoke = 0;
+
+// =============================================================================
+// Arduino entry points
+// =============================================================================
+
+void setup() {
+  Serial.begin(115200);
+  Serial.setTxTimeoutMs(0);
+  randomSeed(esp_random());
+
+  // --- Screen ---
+  tft.init();
+  tft.setRotation(0);
+  tft.fillScreen(TFT_BLACK);
+
+  // --- Canvas ---
+  underwater.setColorDepth(16);
+  underwater.createSprite(CANVAS_W, CANVAS_H);
+
+  screen.setColorDepth(16);
+  screen.createSprite(CANVAS_W, CANVAS_H);
+
+  // --- Koi ---
+  for (int i = 0; i < NUM_KOI_PATTERNS; i++) {
+    const char *err;
+    if (!patternTextures[i].loadTga(KOI_PATTERNS[i].data, KOI_PATTERNS[i].length, err)) {
+      Serial.printf("%s: %s\n", KOI_PATTERNS[i].name, err);
+    }
+  }
+
+  for (Koi &koi : kois) {
+    koi.begin(patternTextures[random(NUM_KOI_PATTERNS)], CANVAS_W, CANVAS_H);
+  }
+
+  for (size_t i = 0; i < std::size(kois); i++) drawOrder[i] = &kois[i];
+  std::sort(std::begin(drawOrder), std::end(drawOrder),
+            [](const Koi *a, const Koi *b) { return a->depth > b->depth; });
+
+  // --- Water ---
+  water.begin();
+}
 
 void loop() {
   uint32_t frameStart = micros();
@@ -162,38 +154,44 @@ void loop() {
   underwater.fillScreen(POND_COLOUR);
   uint32_t afterClear = micros();
 
-  float t  = millis() / 1000.0f;
+  // --- Pond clock ---
+  // normally dt is in real time. While viewer.py records, every frame is
+  // exactly 1 / RECORD_FPS seconds apart instead, so the recording plays
+  // even tho the board runs slowly while sending frames.
   float dt = updateDeltaTime();
+  if (frameStreamIsRecording()) dt = 1.0f / RECORD_FPS;
+  pondTime += dt;
+  float t = pondTime;
 
+  // --- Simulate ---
   water.updateRipples();
+  water.updateLilyPads(dt);
 
+  nextPoke -= dt;
+  if (nextPoke < 0.0f) {
+    water.startRippleAt((int)random(2, CANVAS_W - 3), (int)random(2, CANVAS_H - 3), 300);
+    nextPoke = random(0.0f, 5.0f);
+  }
+
+  // --- Underwater ---
   water.updateCausticsBottom(underwater, t);
 
-  for (Koi &koi : kois){
+  for (Koi &koi : kois) {
     koi.update(dt, t);
     koi.drawShadow(underwater);
   }
   uint32_t afterShadows = micros();
 
-  for (Koi *koi : drawOrder){
+  for (Koi *koi : drawOrder) {
     koi->drawFish(underwater);
   }
   water.drawLilyPadShadows(underwater, t, dt);
-
-
-   water.updateCausticsTop(underwater, t);
-
-  if (millis() - lastPoke > 5000) { water.startRippleAt(30, 40, 500); lastPoke = millis(); }
-
-
+  water.updateCausticsTop(underwater, t);
   uint32_t afterKois = micros();
 
+  // --- Surface ---
   water.drawSurface(underwater, screen);
-
-
   water.drawLilyPads(screen, t, dt);
-
-  // water.drawWater(sprite);
 
   screen.pushRotateZoom(&tft, 120, 160, 0, 2, 2);
   uint32_t afterPush = micros();
@@ -210,6 +208,4 @@ void loop() {
   // Not counted in the frame timing above, so the fps it prints is the
   // display's fps without the viewer.
   streamFrameIfRequested(screen);
-
-
 }
